@@ -45,7 +45,7 @@ def map(f, xs, *args):
         flat_out, tmp_out_spec = pytree.tree_flatten(unflattened_out)
         out_spec[0] = tmp_out_spec
         return flat_out
-    return pytree.tree_unflatten(map_impl(flat_fn, num_mapped_args, *(*flat_xs, *args)), out_spec[0])
+    return pytree.tree_unflatten(map_impl(flat_fn, num_mapped_args, *flat_xs, *args), out_spec[0])
 
 class MapAutogradOp(torch.autograd.Function):
     @staticmethod
@@ -187,7 +187,6 @@ def map_fake_tensor_mode(f, num_mapped, *args):
 
 @map_impl.py_impl(torch._C._functorch.TransformType.Functionalize)
 def map_functionalize(interpreter, f, num_mapped, *args):
-    print("map_functionalize")
     """
     Functionalization implementation for torch.map. Currently:
       1. We don't allow any input mutation inside the map function
@@ -204,7 +203,7 @@ def map_functionalize(interpreter, f, num_mapped, *args):
     functional_map_fn = functionalize(f, remove=mode)
 
     with interpreter.lower():
-        inputs = (unwrapped_xs,) + unwrapped_args
+        inputs = (num_mapped, *unwrapped_xs,  *unwrapped_args)
         if _has_potential_branch_input_mutation(functional_map_fn, inputs):
             raise UnsupportedAliasMutationException(
                 "torch.map is mutating the input!"
@@ -215,7 +214,7 @@ def map_functionalize(interpreter, f, num_mapped, *args):
                 "torch.map is aliasing the input!"
             )
 
-        map_return = map_impl(functional_map_fn, num_mapped, *unwrapped_xs, *unwrapped_args)
+        map_return = map_impl(functional_map_fn, *inputs)
         return _wrap_all_tensors_to_functional(map_return, level=interpreter.level())
 
 # TODO(voz) Make this automatic for keys, this is very ugly atm
